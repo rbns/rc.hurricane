@@ -1,0 +1,96 @@
+#!/bin/sh
+modprobe ipv6
+
+. /etc/rc.d/rc.hurricane.conf
+
+function start_tunnel {
+	ip tunnel add he-ipv6 mode sit remote $SERVERIP local $CLIENTIP ttl 255
+	ip link set he-ipv6 up
+	ip addr add $CLIENTIPV6 dev he-ipv6
+	ip route add ::/0 dev he-ipv6
+	ip -f inet6 addr
+	ifconfig $DEV add $LOCALIPV6/$PREFIX	
+}
+
+function stop_tunnel {
+	ifconfig $DEV del $LOCALIPV6/$PREFIX	
+	ip tunnel del he-ipv6
+}
+
+function restart_tunnel {
+	stop_tunnel
+	sleep 1
+	start_tunnel
+}
+
+function radvd {
+cat <<EOF
+interface $DEV
+{
+	AdvSendAdvert on;
+
+	AdvLinkMTU 1280;
+
+	prefix $NETWORK/$PREFIX
+	{
+		AdvOnLink on;
+		AdvAutonomous on;
+	};
+
+        RDNSS $LOCALIPV6
+        {
+        };
+
+};
+EOF
+}
+
+function update {
+	RESPONSE=$(curl -s https://$USERNAME:$PASSWORD@ipv4.tunnelbroker.net/nic/update?hostname=$TUNNELID)
+	STATUS=$(echo -n $RESPONSE | cut -d " " -f 1)
+	INFO=$(echo -n $RESPONSE | cut -d " " -f 2)
+	case "$STATUS" in
+		"badauth")
+			echo "wrong authentification used, check user and password"
+			;;
+		"nochg")
+			;;
+		"good")
+			;;
+	esac		
+}
+
+function usage {
+	cat <<EOF
+usage: $0 start|stop|restart|update|radvd
+
+start: start the ipv6 tunnel
+stop: stop the ipv6 tunnel
+restart: stop; start
+update: update your local ip to hurricane electric
+radvd: generate an radvd config
+
+EOF
+}
+
+case "$1" in
+	"start")
+		start_tunnel
+		;;
+	"stop")
+		stop_tunnel
+		;;
+	"restart")
+		restart_tunnel
+		;;
+	"update")
+		update
+		;;
+	"radvd")
+		radvd
+		;;
+	*)
+		usage
+		;;
+esac
+
